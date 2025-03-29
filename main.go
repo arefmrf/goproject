@@ -88,24 +88,27 @@ func fetchData(url string, token string, requestBody map[string]interface{}) ([]
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		fmt.Println("Error: status code", resp.StatusCode)
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("error: status code %d, response: %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	// Check for content encoding and decompress if necessary
 	var reader io.Reader
-	if resp.Header.Get("Content-Encoding") == "br" {
-		brReader := brotli.NewReader(resp.Body)
-		reader = brReader
-	} else if resp.Header.Get("Content-Encoding") == "gzip" {
+	switch resp.Header.Get("Content-Encoding") {
+	case "br":
+		reader = brotli.NewReader(resp.Body)
+	case "gzip":
 		gzipReader, err := gzip.NewReader(resp.Body)
 		if err != nil {
 			return nil, fmt.Errorf("error creating gzip reader: %v", err)
 		}
-		defer gzipReader.Close()
+		defer func(gzipReader *gzip.Reader) {
+			err := gzipReader.Close()
+			if err != nil {
+				fmt.Println("error closing gzip reader:", err)
+			}
+		}(gzipReader)
 		reader = gzipReader
-	} else {
+	default:
 		reader = resp.Body
 	}
 
@@ -116,59 +119,57 @@ func fetchData(url string, token string, requestBody map[string]interface{}) ([]
 	return responseBody, nil
 }
 
-func initList(token string) *MinimalResponse {
+func initList(token string) (*MinimalResponse, error) {
 	url := "https://apix.snappshop.ir/search/v1?lat=35.77331&lng=51.418591"
 
 	requestBody := map[string]interface{}{
 		"slug":   "gwWRMg",
 		"render": 3,
 	}
+
 	responseBody, err := fetchData(url, token, requestBody)
 	if err != nil {
-		fmt.Println(err)
-		return nil
+		return nil, err
 	}
 
 	var minimalResponse MinimalResponse
 	if err := json.Unmarshal(responseBody, &minimalResponse); err != nil {
-		responseString := string(responseBody)
 		fmt.Println("Error decoding JSON:", err)
-		fmt.Println("Raw response body:", responseString)
-		return nil
+		fmt.Println("Raw response body:", string(responseBody))
+		return nil, err
 	}
-	return &minimalResponse
+
+	if len(minimalResponse.Data.Structure) == 0 {
+		return nil, fmt.Errorf("empty response structure")
+	}
+
+	return &minimalResponse, nil
 }
 
-func getList(
-	token string,
-	uuid string,
-	skip int,
-	wg *sync.WaitGroup,
-	results chan<- *MinimalResponse,
-) {
-
+func getList(token string, uuid string, skip int, wg *sync.WaitGroup, results chan<- *MinimalResponse) {
 	defer wg.Done()
 
 	url := "https://apix.snappshop.ir/search/v1?lat=35.77331&lng=51.418591"
-
 	requestBody := map[string]interface{}{
 		"slug":   "gwWRMg",
 		"render": 3,
 		"uuid":   uuid,
 		"skip":   skip,
 	}
+
 	responseBody, err := fetchData(url, token, requestBody)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Fetch error:", err)
+		return
 	}
 
 	var minimalResponse MinimalResponse
 	if err := json.Unmarshal(responseBody, &minimalResponse); err != nil {
-		responseString := string(responseBody)
-		fmt.Println("Error decoding JSON:", err)
-		fmt.Println("Raw response body:", responseString)
+		fmt.Println("JSON decode error:", err)
+		fmt.Println("Raw response body:", string(responseBody))
 		return
 	}
+
 	results <- &minimalResponse
 }
 
@@ -181,28 +182,42 @@ func analyzeResponseWorker(results <-chan *MinimalResponse, wg *sync.WaitGroup) 
 	}
 }
 
+func analyzeResponse(minimalResponse *MinimalResponse) {
+	for _, item := range minimalResponse.Data.Structure[0].Items {
+		fmt.Println(item.Title, item.Price.Discount, item.Price.DiscountedPrice)
+	}
+}
+
 func main() {
 	token := getToken()
-	results := make(chan *MinimalResponse, 10)
+	if token == "" {
+		fmt.Println("Failed to retrieve token. Exiting...")
+		return
+	}
+
+	results := make(chan *MinimalResponse, worker)
 	var fetchWg sync.WaitGroup
 	var analyzeWg sync.WaitGroup
+
 	for i := 0; i < worker; i++ {
 		analyzeWg.Add(1)
 		go analyzeResponseWorker(results, &analyzeWg)
 	}
-	initResponse := initList(token)
-	if initResponse == nil {
-		fmt.Println("No data received from the first request. Exiting...")
+
+	initResponse, err := initList(token)
+	if err != nil {
+		fmt.Println("Failed to fetch initial list:", err)
 		close(results)
 		analyzeWg.Wait()
 		return
 	}
 
 	fmt.Println("Status:", initResponse.Status)
-
 	results <- initResponse
+
 	totalPages := initResponse.Data.Structure[0].Pagination.TotalPages
 	uuid := initResponse.Data.Structure[0].UUID
+
 	for page := 1; page < totalPages; page++ {
 		fetchWg.Add(1)
 		go getList(token, uuid, page, &fetchWg, results)
@@ -211,24 +226,4 @@ func main() {
 	fetchWg.Wait()
 	close(results)
 	analyzeWg.Wait()
-
-	//
-	//
-	//
-	// 	initResponse := getList(token, nil, nil, nil)
-	// 	// Print the extracted status
-	// 	fmt.Println("Status:", initResponse.Status)
-	// 	var wg sync.WaitGroup
-	// 	for page := 1; page < initResponse.Data.Structure[0].Pagination.TotalPages; page++ {
-	// 		wg.Add(1)
-	// 		go getList(token, &initResponse.Data.Structure[0].UUID, &page, &wg)
-	// 	}
-	// 	wg.Wait()
-
-}
-
-func analyzeResponse(minimalResponse *MinimalResponse) {
-	for _, item := range minimalResponse.Data.Structure[0].Items {
-		fmt.Println(item.Title, item.Price.Discount, item.Price.DiscountedPrice)
-	}
 }
