@@ -1,5 +1,7 @@
 package models
 
+const TimeLayout = "2006-01-02 15:04:05"
+
 type STokenResponse struct {
 	Status bool               `json:"status"`
 	Data   STokenResponseData `json:"data"`
