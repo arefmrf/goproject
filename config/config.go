@@ -1,8 +1,22 @@
 package config
 
-const (
-	BaseURL   = "https://apix.snappshop.ir"
-	Latitude  = "35.77331"
-	Longitude = "51.418591"
-	Worker    = 8
+import (
+	"github.com/joho/godotenv"
+	"log"
+	"os"
 )
+
+func LoadDBConfig() DBConfig {
+	err := godotenv.Load() // Load .env file
+	if err != nil {
+		log.Fatalf("Error loading .env file")
+	}
+
+	return DBConfig{
+		Host:     os.Getenv("DB_HOST"),
+		Port:     os.Getenv("DB_PORT"),
+		Username: os.Getenv("DB_USERNAME"),
+		Password: os.Getenv("DB_PASSWORD"),
+		Database: os.Getenv("DB_DATABASE"),
+	}
+}

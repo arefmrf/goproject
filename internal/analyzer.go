@@ -49,5 +49,7 @@ func addDB(minimalResponse *models.MinimalResponse) {
 		if err := db.Create(&products).Error; err != nil {
 			fmt.Println("Failed to insert products:", err)
 		}
+	} else {
+		fmt.Println("*** len(products) < 0 ***")
 	}
 }

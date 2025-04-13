@@ -2,9 +2,11 @@ package internal
 
 import (
 	"fmt"
+	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"log"
+	"snapshop/config"
 	"snapshop/models"
 	"sync"
 )
@@ -17,7 +19,17 @@ var (
 func DBSession() (*gorm.DB, error) {
 	var err error
 	once.Do(func() {
-		db, err = gorm.Open(sqlite.Open("test.db"), &gorm.Config{})
+		dbConf := config.LoadDBConfig()
+		//dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=Asia/Shanghai",
+		dsn := fmt.Sprintf(
+			"host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
+			dbConf.Host,
+			dbConf.Username,
+			dbConf.Password,
+			dbConf.Database,
+			dbConf.Port,
+		)
+		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
 		if err != nil {
 			log.Fatalf("failed to connect to database: %v", err)
 		}
