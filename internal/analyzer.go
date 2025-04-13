@@ -30,12 +30,14 @@ func addDB(minimalResponse *models.MinimalResponse) {
 		return
 	}
 	var products []models.DBProduct
+	//var products []*models.DBProduct
 	for _, item := range minimalResponse.Data.Structure[0].Items {
 		endAt, err := time.Parse(models.TimeLayout, item.Price.EndAt)
 		if err != nil {
 			fmt.Println("Failed to parse EndAt:", err)
 			continue // Skip this item if parsing fails
 		}
+		//products = append(products, &models.DBProduct{
 		products = append(products, models.DBProduct{
 			Title:           item.Title,
 			Discount:        item.Price.Discount,
@@ -46,6 +48,9 @@ func addDB(minimalResponse *models.MinimalResponse) {
 		})
 	}
 	if len(products) > 0 {
+		//if err := db.Create(products).Error; err != nil {
+		//	fmt.Println("Failed to insert products:", err)
+		//}
 		if err := db.Create(&products).Error; err != nil {
 			fmt.Println("Failed to insert products:", err)
 		}
